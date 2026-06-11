@@ -1,6 +1,5 @@
 # Full-Site SEO Audit Prompt — v4
 
-> Usage: Paste everything below the line into a new chat (web search/fetch enabled). Replace `{url}` and supply all available data records (see **Inputs** section). The audit runs on whatever records are present; missing records are logged in `errors` and the audit proceeds.
 > v4 changes: five structured data feeds added (GA4 Analytics, Search Console, Keyword Rankings, Google Business Profile, SiteSignals); CWV moved in-scope via SiteSignals; search volumes sourced from KeywordRankHistory (no longer fabricated); GBP audit is now data-driven; Phase 0 pre-processing step added; five new `findings` keys added to schema; `meta.data_sources_available` added.
 
 ---

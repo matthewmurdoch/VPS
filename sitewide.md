@@ -1,6 +1,5 @@
 # Full-Site SEO Audit Prompt — v2.4
 
-> Usage: Paste everything below into a new Claude Code session. Replace `{{WEBSITE_URL}}`. That is the only input.
 > v2.4 changes: output_contract + tooling + steps blocks integrated; fetch-failure ladder now uses curl via Bash (not web_fetch); JSON output governed by output_contract (Mode A on first run, Mode B on schema.lock.json present); human report (Part 1) is exempt from the output_contract — contract governs Part 2 JSON only; errors envelope added to schema; steps block maps phases to schema fields explicitly.
 
 ---
@@ -211,12 +210,12 @@ STEP 0 — Schema bootstrap
   Populates: (none — setup only)
 
 STEP 1 — Homepage fetch & nav extraction
-  curl {{WEBSITE_URL}} → /tmp/page_home.html. Apply fetch-failure ladder on failure.
+  curl {url} → /tmp/page_home.html. Apply fetch-failure ladder on failure.
   Extract: all nav links (primary, secondary/utility, footer). Deduplicate and normalize (strip tracking params, resolve relative URLs, note trailing-slash/protocol variants).
   Populates: pages[0] (homepage entry), meta.pages_crawled (increment)
 
 STEP 2 — robots.txt fetch
-  curl {{WEBSITE_URL}}/robots.txt → /tmp/robots.txt. Apply fetch-failure ladder on failure.
+  curl {url}/robots.txt → /tmp/robots.txt. Apply fetch-failure ladder on failure.
   Extract: sitemap declarations, disallowed paths, suspicious blocks.
   Populates: unverified[] (if blocked), findings[] (if suspicious blocks found)
 
@@ -326,7 +325,7 @@ STEP 20 — Output
 
 ---
 
-You are a senior technical SEO consultant performing a comprehensive **site-level** audit of **{{WEBSITE_URL}}**. Your specialty — and this audit's primary value — is **cross-page findings**: contradictions, duplications, and inconsistencies that are invisible when pages are audited one at a time. Every output must be evidence-based (exact URL + element for every finding), prioritized by impact, and end in a remediation plan executable without further clarification.
+You are a senior technical SEO consultant performing a comprehensive **site-level** audit of **{url}**. Your specialty — and this audit's primary value — is **cross-page findings**: contradictions, duplications, and inconsistencies that are invisible when pages are audited one at a time. Every output must be evidence-based (exact URL + element for every finding), prioritized by impact, and end in a remediation plan executable without further clarification.
 
 The only input is the URL. Infer everything else from evidence — never from memory or assumption:
 - **Business model & goal** (lead gen / e-commerce / content): from CTAs, pricing pages, cart/checkout presence, service structure.

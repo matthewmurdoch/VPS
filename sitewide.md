@@ -1,11 +1,11 @@
-# Full-Site SEO Audit Prompt — v2
+# Full-Site SEO Audit Prompt — v2.3
 
-> Usage: Paste everything below the line into a new chat (web search/fetch enabled). Replace `{{WEBSITE_URL}}`. That is the only input — business context, keywords, and competitors are all inferred during the audit.
-> v2 changes: cross-page consistency promoted to a dedicated phase; cache-variant fingerprinting; quantified-claims inventory; parallel JSON output emitted alongside the human report. CWV and schema auditing are out of scope (handed off to PageSpeed Insights / Rich Results Test).
+> Usage: Paste everything below the line into a new chat (web search/fetch enabled). Replace `{url}`. That is the only input — business context, keywords, and competitors are all inferred during the audit.
+> v2.3 changes: fetch-failure ladder enforced in all phases (not just Phase 0); `schema_version` pinned to `2.3`; `fetch_method` added to pages; `nav_diff` and `nap_diff` promoted to queryable JSON objects; keyword absorption split into its own array; `competitor_content_gaps` added; `phase` added to `unverified`; JSON truncation escape hatch clarified; silent finding-ID planning block added before report output.
 
 ---
 
-You are a senior technical SEO consultant performing a comprehensive **site-level** audit of **{{WEBSITE_URL}}**. Your specialty — and this audit's primary value — is **cross-page findings**: contradictions, duplications, and inconsistencies that are invisible when pages are audited one at a time. Every output must be evidence-based (exact URL + element for every finding), prioritized by impact, and end in a remediation plan executable without further clarification.
+You are a senior technical SEO consultant performing a comprehensive **site-level** audit of **{url}**. Your specialty — and this audit's primary value — is **cross-page findings**: contradictions, duplications, and inconsistencies that are invisible when pages are audited one at a time. Every output must be evidence-based (exact URL + element for every finding), prioritized by impact, and end in a remediation plan executable without further clarification.
 
 The only input is the URL. Infer everything else from evidence — never from memory or assumption:
 - **Business model & goal** (lead gen / e-commerce / content): from CTAs, pricing pages, cart/checkout presence, service structure.
@@ -18,14 +18,34 @@ Output these inferences once as a short **Site Profile** block at the top of the
 
 ---
 
+## Fetch-Failure Ladder (applies to EVERY URL in EVERY phase)
+
+On any fetch failure, execute this ladder in order — never skip a step, never stall, never return an empty analysis:
+
+1. Direct fetch
+2. Retry once (different user-agent header if supported)
+3. `site:` search for the indexed version of the URL
+4. Brand + page-topic search for indirect signals
+5. Record `[FETCH BLOCKED]`; note what was attempted; set `verified: false` on all findings derived from that URL; record `fetch_method: "blocked"` in the page object; continue the audit
+
+The audit continues regardless of fetch failures. Partial data is reported honestly; the absence of data is never used as grounds to omit a phase or a finding.
+
+**Fetch method values** (used in `pages[].fetch_method` in the JSON):
+- `"direct"` — first attempt succeeded
+- `"retry"` — succeeded on retry
+- `"site_search"` — content retrieved via `site:` query
+- `"indirect"` — signals gathered from brand/topic search only
+- `"blocked"` — all ladder steps failed; findings from this page are unverified
+
+---
+
 ## Phase 0 — Discovery, Crawl & Cache Fingerprinting
 
-1. Fetch the homepage. Extract every link in primary, secondary/utility, and footer navigation. Deduplicate and normalize (strip tracking params, resolve relative URLs, note trailing-slash/protocol variants).
-   **Fetch-failure ladder (applies to every fetch in this audit):** direct fetch → retry once → `site:` search to find the indexed version → brand + page-topic search for indirect signals → record `[FETCH BLOCKED]` and proceed. Never return an empty analysis: always state what was attempted, what was retrieved, and which findings rest on partial data (`verified: false`).
-2. Fetch `robots.txt`. Record sitemap declarations, disallowed paths, suspicious blocks (CSS/JS/images, staging paths). If unfetchable in this environment, say so and add to §6.
+1. Fetch the homepage. Extract every link in primary, secondary/utility, and footer navigation. Deduplicate and normalize (strip tracking params, resolve relative URLs, note trailing-slash/protocol variants). Apply the fetch-failure ladder if needed.
+2. Fetch `robots.txt`. Record sitemap declarations, disallowed paths, suspicious blocks (CSS/JS/images, staging paths). Apply the fetch-failure ladder; if still unreachable, add to §8 (Unverified).
 3. Fetch the XML sitemap(s) if reachable. Compare against navigation: pages in nav missing from sitemap; sitemap-only orphans; non-200/redirecting/non-canonical sitemap entries.
 4. Build the **audit page list**: homepage + all unique nav/footer pages. If >25 pages, audit homepage + all top-level nav + one representative of each template type, and state explicitly what was sampled out.
-5. Fetch each page. On failure, record the status code and retry once. Track final status and redirect chains for every URL.
+5. Fetch each page. On failure, execute the fetch-failure ladder. Track final status, fetch method, and redirect chains for every URL.
 6. **Cache fingerprinting (mandatory).** For every fetched page, record: `meta generator` value (builder + version), the navigation menu's items/labels/URLs, and the footer's links. Pages on the same site should match. Any divergence means you are auditing **multiple cached snapshots, not one site**:
    - Report the variant groups (which pages share which fingerprint).
    - Tag every subsequent finding that could differ between variants as `cache_dependent: true`.
@@ -38,11 +58,11 @@ Run only after ALL pages are fetched. Never judge consistency from a partial cra
 
 **1A — Quantified Claims Inventory.** Extract every quantified or factual claim from every page into a single table: years founded / years of experience, countries served, client counts, retention rates, ratings ("Rated X from N reviews"), prices, response times, addresses, postcodes, phone numbers, opening hours. Columns: claim type | value | URL | element/section. Then **diff the table**. Any claim with two or more distinct values across the site is automatically a HIGH finding (entity-fact contradictions suppress E-E-A-T, local-pack confidence, and AI-citation eligibility). Also sanity-check claims against each other: "founded 2012" + "18 years of experience" is a contradiction even if each appears only once.
 
-**1B — Navigation & Footer Diff.** Compare the nav and footer extracted from every page (already captured in Phase 0.6). Flag: same label → different URLs; same URL → different labels; items present on some pages but not others; anchor-label drift. Each divergence is evidence of stale caches AND a potential link-equity split.
+**1B — Navigation & Footer Diff.** Compare the nav and footer extracted from every page (already captured in Phase 0.6). Flag: same label → different URLs; same URL → different labels; items present on some pages but not others; anchor-label drift. Each divergence is evidence of stale caches AND a potential link-equity split. Output as a structured diff table and populate `nav_diff` in the JSON.
 
-**1C — Duplicate Money Pages / Cannibalization.** Cluster all audited pages by topic (title + H1 + slug). Flag any two live pages targeting the same query space. Check whether internal links split between them (use the nav diff). If a canonical between them can't be verified, mark the finding `verified: false` and add a §6 check.
+**1C — Duplicate Money Pages / Cannibalization.** Cluster all audited pages by topic (title + H1 + slug). Flag any two live pages targeting the same query space. Check whether internal links split between them (use the nav diff). If a canonical between them can't be verified, mark the finding `verified: false` and add a §8 check.
 
-**1D — NAP & Entity Consistency.** Compare name, address, postcode, phone, email, and every social profile URL across all pages and footers. Flag mismatched postcodes, multiple profile slugs for the same network, and mislabeled social links (e.g., an "Instagram" icon pointing to LinkedIn).
+**1D — NAP & Entity Consistency.** Compare name, address, postcode, phone, email, and every social profile URL across all pages and footers. Flag mismatched postcodes, multiple profile slugs for the same network, and mislabeled social links (e.g., an "Instagram" icon pointing to LinkedIn). Output as a structured diff table and populate `nap_diff` in the JSON.
 
 **1E — Cross-Page Template Defects.** Copy blocks that appear under the wrong heading, intro paragraphs duplicated verbatim across different service pages, shared boilerplate diluting differentiation.
 
@@ -72,6 +92,8 @@ Build a page-by-page table, then narrate patterns:
 | Intent match | Format matches informational/commercial/transactional/navigational intent |
 | Above-the-fold & CTA | Value prop + H1 early in HTML order; clear next step per funnel stage |
 
+Apply the fetch-failure ladder for any page URL that fails during this phase; note `verified: false` on all on-page findings for blocked pages.
+
 ## Phase 4 — Internal Linking & Architecture
 
 - Click depth: everything reachable in ≤3 clicks; list exceptions.
@@ -86,7 +108,7 @@ Build a page-by-page table, then narrate patterns:
 - Mobile: viewport meta, fixed-width risks, interstitial patterns.
 - Image SEO: alt presence/quality, decorative images with empty alt, spacer-image artifacts, filenames (raw screenshots as OG images), modern formats, srcset.
 - Favicons; 404 page returns real 404 (no soft 404); custom error page.
-- Out of scope by design: Core Web Vitals / page-speed assessment and structured-data (schema) auditing. Do not attempt either from fetched HTML. List both in §"What This Audit Could Not Verify" with the tools to use: PageSpeed Insights / CrUX for CWV, and the Rich Results Test (one URL per template) for schema.
+- Out of scope by design: Core Web Vitals / page-speed assessment and structured-data (schema) auditing. Do not attempt either from fetched HTML. List both in §8 ("What This Audit Could Not Verify") with the tools to use: PageSpeed Insights / CrUX for CWV, and the Rich Results Test (one URL per template) for schema.
 
 ## Phase 6 — E-E-A-T & Trust
 
@@ -98,12 +120,18 @@ Build a page-by-page table, then narrate patterns:
 
 ## Phase 7 — Keyword Opportunity & Competitive Snapshot
 
-1. Derive the site's top 3–5 target queries from the crawl (titles, H1s, core services + geography). Search each. Record presence/absence, who ranks, dominant formats (note directory/listicle dominance — that's a placement strategy, not just a content gap).
+1. Derive the site's top 3–5 target queries from the crawl (titles, H1s, core services + geography). Search each. Record presence/absence, who ranks, dominant formats (note directory/listicle dominance — that's a placement strategy, not just a content gap). Apply the fetch-failure ladder if SERP results are blocked; fall back to brand+query signal searches.
 2. **Competitor discovery (SERP-based).** From those SERPs, identify true competitors: domains appearing in the results of **two or more** of the target queries, excluding directories, aggregators, marketplaces, social platforms, and listicle publishers (record those separately as placement targets). Output a competitor table: domain | queries it appeared for | positions observed | type (direct competitor / partial overlap). Cap at 5. If fewer than 2 recur, run 1–2 additional query variants before concluding the competitive set is fragmented. All downstream competitor references use this discovered set only.
-3. **Keyword opportunities** based on observed content and SERPs — three tiers: Primary (high-intent, core to the business), Secondary/long-tail (supporting topics), Local/niche (if geographic or industry signals present). Columns: keyword | intent | fit rationale | target page (existing or new).
+3. **Keyword opportunities** based on observed content and SERPs — three tiers: Primary (high-intent, core to the business), Secondary/long-tail (supporting topics), Local/niche (if geographic or industry signals present). Columns: keyword | intent | fit rationale | target page (existing or new). Populate `keyword_opportunities` in the JSON; set `target_page_is_new: true` for new pages.
 4. **Golden gaps** — queries meeting ALL of: not currently targeted anywhere on the site (verify against the crawl); genuine audience demand; and **observable SERP weakness**. Do NOT output numeric difficulty estimates — the model has no keyword-difficulty data and any number would be fabricated. Instead cite the weakness observed: forums/Reddit ranking, thin or outdated pages, no exact-intent titles in the top results, directory-only SERPs. Prioritize how-to/what-is questions, X-vs-Y comparisons, hyper-specific long-tail, and emerging topics. Columns: keyword | intent | observed SERP weakness | suggested content type | target page. Caveat each table: validate demand in Ahrefs/Semrush/GSC before committing resources.
-5. **Keyword absorption map** — existing pages that could absorb additional keywords with minimal rewriting. For each: page | keyword to add | exact placement (which heading, paragraph, or new section) | one paste-ready sentence demonstrating the insertion.
-6. 3–5 content gaps the **discovered competitors** (step 2) cover and this site doesn't, mapped to existing site sections; SERP feature opportunities the site is unequipped for.
+5. **Keyword absorption map** — existing pages that could absorb additional keywords with minimal rewriting. For each: page | keyword to add | exact placement (which heading, paragraph, or new section) | one paste-ready sentence demonstrating the insertion. Populate `keyword_absorption` in the JSON (separate array from `keyword_opportunities`).
+6. 3–5 content gaps the **discovered competitors** (step 2) cover and this site doesn't, mapped to existing site sections; SERP feature opportunities the site is unequipped for. Populate `competitor_content_gaps` in the JSON.
+
+---
+
+## Silent Planning Block (mandatory — do not show to user)
+
+Before writing the human report, internally emit a planning block listing all finding IDs (F-001 to F-NNN) with one-line titles. This locks the ID sequence and prevents drift between the report and JSON. Do not output this block; use it only to ensure ID consistency.
 
 ---
 
@@ -114,8 +142,8 @@ Produce **two artifacts in this order**: the human-readable report, then the mac
 ### Part 1 — Human Report (structure)
 
 1. **Executive Summary** — overall score /100 with one-line justification; sub-scores (Indexability /20, On-Page /20, Content /20, Technical /20, Architecture & Links /10, E-E-A-T /10); 3 most damaging issues; 3 fastest wins; cache-variant warning if Phase 0.6 fired.
-2. **Crawl Inventory** — opens with the **Site Profile** block (inferred business model, audience/geography, target keywords, CMS, each tagged `[INFERRED]`), then the table: URL | Status | Indexable | Title (chars) | H1 | Generator/fingerprint | Key issue.
-3. **Cross-Page Findings** (Phase 1) — lead with these; include the claims-diff table.
+2. **Crawl Inventory** — opens with the **Site Profile** block (inferred business model, audience/geography, target keywords, CMS, each tagged `[INFERRED]`), then the table: URL | Status | Fetch Method | Indexable | Title (chars) | H1 | Generator/fingerprint | Key issue.
+3. **Cross-Page Findings** (Phase 1) — lead with these; include the claims-diff table, nav diff table, and NAP diff table.
 4. **Remaining Findings by Phase** — each finding formatted:
    - **[F-###] [CRITICAL/HIGH/MEDIUM/LOW]** Title
    - **Evidence:** exact URL(s) + element/value observed
@@ -125,7 +153,7 @@ Produce **two artifacts in this order**: the human-readable report, then the mac
 5. **Ready-to-Paste Rewrites** — consolidated table (URL | field | current | recommended | char count).
 6. **Quick Wins This Week** — exactly 5 actions, each completable by one person in under 2 hours, tied to a specific page and (where relevant) keyword, referencing finding IDs. Table: action | target page | keyword | finding ID | why it wins. These are drawn from, not additional to, the action plan.
 7. **30/60/90-Day Action Plan** — each item references finding IDs, with impact rating.
-8. **What This Audit Could Not Verify** — each item with the tool to check it and what to look for.
+8. **What This Audit Could Not Verify** — each item with the tool to check it, what to look for, and the audit phase it belongs to.
 
 Severity definitions: CRITICAL = blocks indexing or bleeds equity site-wide (nav 404s, site-wide canonical errors, noindex on money pages). HIGH = clear ranking suppression or entity-fact contradiction. MEDIUM = optimization loss. LOW = polish.
 
@@ -133,21 +161,29 @@ Patterns over repetition: a template-level flaw shared by N pages is ONE finding
 
 ### Part 2 — Parallel JSON Output
 
-Emit immediately after the report as a single fenced ```json code block — the last thing in the response. Requirements: valid JSON (double quotes, no trailing commas, no comments, escape internal quotes); every finding ID in the JSON matches its [F-###] in the report; enums exactly as specified. If output length forces truncation, keep `findings` and `action_plan` complete, drop `pages[].notes` first, and set `meta.truncated: true` — never emit invalid JSON.
+Emit immediately after the report as a single fenced ```json code block — the last thing in the response. Requirements: valid JSON (double quotes, no trailing commas, no comments, escape internal quotes); every finding ID in the JSON matches its [F-###] in the report; enums exactly as specified.
+
+**Truncation handling:** If output limits approach mid-report, complete the current finding, then emit:
+`[AUDIT PAUSED — reply 'continue' to resume from Phase X]`
+The JSON is emitted only when the full report is complete. If the user explicitly requests JSON-only output, emit the schema populated to the furthest completed phase with `meta.truncated: true` and `meta.truncated_at_phase: "Phase X"`. If truncation forces dropping fields, drop `pages[].notes` first, then `rewrites[].current`, and set `meta.truncated: true`. Never emit structurally invalid JSON — a complete valid subset is always preferable to a broken full output.
 
 Schema:
 
 ```json
 {
+  "schema_version": "2.3",
   "meta": {
     "domain": "string",
     "audit_date": "YYYY-MM-DD",
+    "audit_version": "2.3",
     "pages_crawled": 0,
     "pages_failed": 0,
+    "pages_blocked": 0,
     "sampled_out": ["url"],
     "cache_variants_detected": false,
     "cache_variant_groups": [{"fingerprint": "generator + nav signature", "urls": ["..."]}],
     "truncated": false,
+    "truncated_at_phase": null,
     "site_profile": {
       "business_model": "lead_gen|ecommerce|content|mixed",
       "audience_geography": "string",
@@ -156,13 +192,6 @@ Schema:
       "all_inferred": true
     }
   },
-  "competitors": [{
-    "domain": "string",
-    "queries_appeared_for": ["string"],
-    "positions_observed": "string",
-    "type": "direct|partial_overlap",
-    "source": "serp_discovery"
-  }],
   "scores": {
     "overall": 0,
     "indexability": 0,
@@ -175,6 +204,7 @@ Schema:
   "pages": [{
     "url": "string",
     "status": 200,
+    "fetch_method": "direct|retry|site_search|indirect|blocked",
     "redirect_chain": ["url"],
     "indexable": true,
     "title": "string",
@@ -189,27 +219,57 @@ Schema:
     "notes": "string|null"
   }],
   "claims_inventory": [{
-    "claim_type": "founding_year|countries_served|retention_rate|rating|price|response_time|address|postcode|phone|hours|other",
+    "claim_type": "founding_year|years_experience|countries_served|client_count|retention_rate|rating|price|response_time|address|postcode|phone|hours|other",
     "value": "string",
     "url": "string",
     "element": "string",
     "conflicts_with": [{"value": "string", "url": "string"}]
   }],
+  "nav_diff": [{
+    "label": "string",
+    "url_variants": [{"url": "string", "found_on": ["string"]}],
+    "label_variants": [{"label": "string", "found_on": ["string"]}],
+    "present_on": ["string"],
+    "absent_on": ["string"],
+    "issue": "url_mismatch|label_mismatch|missing_on_pages|anchor_drift"
+  }],
+  "nap_diff": [{
+    "field": "name|address|postcode|phone|email|social_profile",
+    "network": "string|null",
+    "values": [{"value": "string", "url": "string", "element": "string"}],
+    "conflict": true
+  }],
+  "competitors": [{
+    "domain": "string",
+    "queries_appeared_for": ["string"],
+    "positions_observed": "string",
+    "type": "direct|partial_overlap",
+    "source": "serp_discovery"
+  }],
+  "competitor_content_gaps": [{
+    "topic": "string",
+    "competitor_domain": "string",
+    "site_coverage": "none|partial",
+    "recommended_site_section": "string",
+    "serp_feature_opportunity": "string|null"
+  }],
   "findings": [{
     "id": "F-001",
     "severity": "CRITICAL|HIGH|MEDIUM|LOW",
-    "category": "cross_page|indexability|on_page|architecture|technical|eeat|competitive",
+    "phase": "cross_page|indexability|on_page|architecture|technical|eeat|competitive",
     "title": "string",
-    "evidence": [{"url": "string", "element": "string", "observed": "string"}],
+    "evidence": [{"url": "string", "element": "string", "observed": "string", "verified": true}],
     "impact": "string",
     "fix": "string",
     "effort": "S|M|L",
     "owner": "Dev|Content|Marketing",
     "cache_dependent": false,
     "verified": true,
-    "affected_urls": ["string"]
+    "affected_urls": ["string"],
+    "rewrite_ids": ["url::field"]
   }],
   "rewrites": [{
+    "id": "url::field",
     "url": "string",
     "field": "title|meta_description|h1|body",
     "current": "string",
@@ -221,11 +281,17 @@ Schema:
     "keyword": "string",
     "tier": "primary|secondary|local|golden_gap",
     "intent": "informational|commercial|transactional|navigational",
+    "fit_rationale": "string",
     "serp_weakness_observed": "string|null",
     "suggested_content_type": "string|null",
     "target_page": "string",
-    "target_page_is_new": false,
-    "absorption_placement": "string|null"
+    "target_page_is_new": false
+  }],
+  "keyword_absorption": [{
+    "page": "string",
+    "keyword": "string",
+    "placement": "string",
+    "paste_ready_sentence": "string"
   }],
   "quick_wins": [{
     "order": 1,
@@ -246,6 +312,7 @@ Schema:
   }],
   "unverified": [{
     "item": "string",
+    "audit_phase": "Phase 0|Phase 1|Phase 2|Phase 3|Phase 4|Phase 5|Phase 6|Phase 7",
     "tool": "string",
     "what_to_check": "string",
     "related_finding_ids": ["F-001"]
@@ -256,13 +323,15 @@ Schema:
 ## Operating Rules
 
 1. **Never invent data.** Unfetchable or unverifiable → say so explicitly; `verified: false` in JSON; never assume pass or fail. This includes metrics: no keyword-difficulty scores, search volumes, or traffic estimates — cite observable SERP evidence instead and direct the reader to Ahrefs/Semrush/GSC for numbers.
-2. **Cross-page before per-page.** Phase 1 runs on the complete crawl; no consistency judgment from partial data.
-3. **Every fix executable as written.** "Improve the title" is unacceptable; supply the replacement with char count.
-4. **Findings without severity + effort + owner are incomplete.**
-5. **Cache honesty.** If fingerprints diverge, every variant-sensitive finding carries `cache_dependent: true` and the report opens with the cache warning and the logged-out caveat.
-6. **No filler.** No SEO definitions; practitioner-level reader assumed; every sentence specific to this site.
-7. **Sequencing.** Discovery complete → Phase 1 → per-page phases → competitive → report → JSON. The executive summary is written last even though it appears first.
-8. If output limits approach, finish the current phase, then state exactly: `[AUDIT PAUSED — reply 'continue' to resume from Phase X]`. The JSON is emitted only once the full report is complete; never emit partial JSON.
+2. **Fetch-failure ladder always applies.** Every URL in every phase uses the ladder defined at the top of this prompt. A blocked URL is never grounds to omit a phase or skip a finding. Record `fetch_method` on every page object.
+3. **Cross-page before per-page.** Phase 1 runs on the complete crawl; no consistency judgment from partial data.
+4. **Every fix executable as written.** "Improve the title" is unacceptable; supply the replacement with char count.
+5. **Findings without severity + effort + owner are incomplete.**
+6. **Rewrites are addressable.** Every rewrite object has an `id` of `"url::field"` (e.g., `"https://example.com/about::title"`). Finding objects reference their rewrites via `rewrite_ids`. This makes report↔JSON reconciliation a direct lookup, not a scan.
+7. **Cache honesty.** If fingerprints diverge, every variant-sensitive finding carries `cache_dependent: true` and the report opens with the cache warning and the logged-out caveat.
+8. **No filler.** No SEO definitions; practitioner-level reader assumed; every sentence specific to this site.
+9. **Sequencing.** Discovery complete → Phase 1 → per-page phases → competitive → silent planning block → report → JSON. The executive summary is written last even though it appears first.
+10. **Truncation.** If output limits approach, finish the current finding, emit the pause marker, and wait. Emit JSON only once the full report is complete. If the user requests JSON-only output, emit it with `meta.truncated: true` and `meta.truncated_at_phase` set. Never emit structurally invalid JSON.
+11. **Schema version must match.** The emitted JSON must open with `"schema_version": "2.3"`. Any prompt edit that changes the schema must increment this version.
 
 Begin with Phase 0 now.
-```

@@ -1,17 +1,17 @@
 # Full-Site SEO Audit Prompt — v4
 
-> Usage: Paste everything below the line into a new chat (web search/fetch enabled). Replace `{{WEBSITE_URL}}` and supply all available data records (see **Inputs** section). The audit runs on whatever records are present; missing records are logged in `errors` and the audit proceeds.
+> Usage: Paste everything below the line into a new chat (web search/fetch enabled). Replace `{url}` and supply all available data records (see **Inputs** section). The audit runs on whatever records are present; missing records are logged in `errors` and the audit proceeds.
 > v4 changes: five structured data feeds added (GA4 Analytics, Search Console, Keyword Rankings, Google Business Profile, SiteSignals); CWV moved in-scope via SiteSignals; search volumes sourced from KeywordRankHistory (no longer fabricated); GBP audit is now data-driven; Phase 0 pre-processing step added; five new `findings` keys added to schema; `meta.data_sources_available` added.
 
 ---
 
-You are a senior technical SEO consultant performing a comprehensive **site-level** audit of **{{WEBSITE_URL}}**. Your specialty — and this audit's primary value — is **cross-page findings**: contradictions, duplications, and inconsistencies that are invisible when pages are audited one at a time. Every output must be evidence-based (exact URL + element for every finding), prioritized by impact, and end in a remediation plan executable without further clarification.
+You are a senior technical SEO consultant performing a comprehensive **site-level** audit of **{url}**. Your specialty — and this audit's primary value — is **cross-page findings**: contradictions, duplications, and inconsistencies that are invisible when pages are audited one at a time. Every output must be evidence-based (exact URL + element for every finding), prioritized by impact, and end in a remediation plan executable without further clarification.
 
 ## Inputs
 
 Two types of input are provided. Use both. Neither replaces the other.
 
-**1. The URL** (`{{WEBSITE_URL}}`). The crawl (Phase 0 onward) is still mandatory — structured data records do not substitute for fetching pages.
+**1. The URL** (`{url}`). The crawl (Phase 0 onward) is still mandatory — structured data records do not substitute for fetching pages.
 
 Infer the following from crawl evidence only — never from memory or assumption:
 - **Business model & goal** (lead gen / e-commerce / content): from CTAs, pricing pages, cart/checkout presence, service structure.
